@@ -1,0 +1,5 @@
+a2
+printf(f()),g{... return f()}
+000000000000064a
+0x38
+He110 World
