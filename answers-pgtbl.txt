@@ -1,0 +1,3 @@
+getpid()
+uptime()
+fstate()
