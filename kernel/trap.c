@@ -65,7 +65,7 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if(r_scause() == 15){
+  } else if(r_scause() == 15||r_scause()==13){
       //page fault
       uint64 va=r_stval();
       if(!cow_pagefault(p->pagetable,va)){

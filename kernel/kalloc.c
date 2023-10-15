@@ -14,7 +14,7 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-int ref[PHYSTOP/PGSIZE];
+int ref[PHYSTOP/PGSIZE+1];//ref count
 
 struct run {
   struct run *next;
@@ -38,7 +38,7 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
-      ref[(uint64)p/PGSIZE]=1;
+      ref[(uint64)p/PGSIZE]=1;//init
       kfree(p);
   }
 }
@@ -50,19 +50,16 @@ freerange(void *pa_start, void *pa_end)
 void
 kfree(void *pa)
 {
-  if(ref[(uint64)pa/PGSIZE]>0){
-      acquire(&kmem.lock);
-      ref[(uint64)pa/PGSIZE]--;
-      release(&kmem.lock);
-      if(ref[(uint64)pa/PGSIZE]>0){
-          return;
-      }
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
+  acquire(&kmem.lock);
+  int remain=--ref[(uint64)pa/PGSIZE];
+  release(&kmem.lock);
+  if(remain>0){
+     return;
   }
 
   struct run *r;
-
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
-    panic("kfree");
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -87,9 +84,9 @@ kalloc(void)
   r = kmem.freelist;
   if(r){
     kmem.freelist = r->next;
+    if(ref[(uint64)r/PGSIZE]!=0) panic("kalloc: ref count");
     ref[(uint64)r/PGSIZE]=1;
   }
-
   release(&kmem.lock);
 
   if(r){
@@ -100,8 +97,8 @@ kalloc(void)
 }
 
 void ref_increase(uint64 pa){
-    if(pa%PGSIZE) panic("ref increase err");
     acquire(&kmem.lock);
+    if(pa%PGSIZE!=0||pa>=PHYSTOP||ref[pa/PGSIZE]<1) panic("ref increase err");
     ref[pa/PGSIZE]++;
     release(&kmem.lock);
 }

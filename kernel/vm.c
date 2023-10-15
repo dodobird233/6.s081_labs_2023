@@ -364,7 +364,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pte = walk(pagetable, va0, 0);
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
-    if(*pte&PTE_C){
+    if((*pte & PTE_W)==0){
         if(!cow_pagefault(pagetable,va0)) return -1;
     }
     pa0 = PTE2PA(*pte);
@@ -449,12 +449,12 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 int cow_pagefault(pagetable_t pagetable,uint64 va){
-    if(va>MAXVA) return 0;
+    if(va>=MAXVA) return 0;
     pte_t *pte;
     if(!(pte=walk(pagetable,va,0))){
         return 0;
     }
-    if(!(*pte&PTE_V)||!(*pte&PTE_U)||!(*pte&PTE_C)){
+    if(!(*pte&PTE_V)||!(*pte&PTE_C)){
         return 0;
     }
     va = PGROUNDDOWN(va);
