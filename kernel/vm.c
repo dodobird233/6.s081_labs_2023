@@ -315,7 +315,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -324,19 +323,16 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    if(flags&PTE_W){
+      flags &= ~PTE_W;
+      flags |= PTE_C;
     }
+    flags |= PTE_R;
+    *pte = PA2PTE(pa)|flags;
+    mappages(new, i, PGSIZE, pa, flags);
+    ref_increase(pa);
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -366,9 +362,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
+    if(*pte&PTE_C){
+        if(!cow_pagefault(pagetable,va0)) return -1;
+    }
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)
@@ -448,4 +446,28 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int cow_pagefault(pagetable_t pagetable,uint64 va){
+    if(va>MAXVA) return 0;
+    pte_t *pte;
+    if(!(pte=walk(pagetable,va,0))){
+        return 0;
+    }
+    if(!(*pte&PTE_V)||!(*pte&PTE_U)||!(*pte&PTE_C)){
+        return 0;
+    }
+    va = PGROUNDDOWN(va);
+    char*mem=kalloc();//alloc a page
+    if(!mem){
+        return 0;
+    }
+    uint64 pa = PTE2PA(*pte);
+    memmove(mem, (char*)pa, PGSIZE);
+    uint flags = PTE_FLAGS(*pte);
+    *pte = PA2PTE((uint64)mem) | flags;
+    *pte |= PTE_W;
+    *pte &= ~PTE_C;
+    kfree((void*)pa);//page count minus 1
+    return 1;
 }

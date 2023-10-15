@@ -65,6 +65,12 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15){
+      //page fault
+      uint64 va=r_stval();
+      if(!cow_pagefault(p->pagetable,va)){
+          setkilled(p);
+      }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
