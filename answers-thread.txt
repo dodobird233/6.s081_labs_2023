@@ -1,0 +1,8 @@
+thread1: not find k,want to add k at the end of the file
+switch to thread2
+thread2: not find m,want to add m at the end of the file
+thread2: write m
+switch to thread1
+thread1: write k
+
+now the end of the file is k, m is missing
